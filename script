@@ -1,5 +1,5 @@
 --[[
-    Stand Command Script (LocalScript) - Full Version (Modified V6)
+    Stand Command Script (LocalScript) - Full Version (Modified V7 - Expanded Client Commands)
 
     Listens for chat messages from a specific target player and performs actions
     based on commands they type. This script runs on your client (locally).
@@ -7,18 +7,40 @@
     Supports partial, case-insensitive player names for target commands.
 
     Commands:
+    -- Movement & Teleport --
     .goto [player/partial] /e goto [player/partial] - Teleports to target (or specified/partially named player).
     .follow [player/partial]/e follow [player/partial]- Walk-follows the target (or specified/partially named player).
     .fly [player/partial]  /e fly [player/partial]  - Flies behind/looking at target (or specified/partially named player) (noclip on).
     .orbit [player/partial]/e orbit [player/partial]- Orbits the target (or specified/partially named player) (noclip off).
-    .unfollow      /e unfollow      - Stops ALL movement modes (follow, fly, orbit) & related effects.
+    .bang [player/partial]/e bang [player/partial] - VISUALLY moves behind target player rapidly (no physical effect on target).
+    .unfollow      /e unfollow      - Stops ALL movement modes (follow, fly, orbit, bang, spin, platformstand) & related effects.
     .unfly         /e unfly         - Alias for .unfollow; stops all movement modes & effects.
+    .rejoin        /e rejoin        - Makes you rejoin the current server.
+
+    -- Character Modification --
     .speed [value] /e speed [value] - Sets your walk speed (e.g., ".speed 50").
     .jump          /e jump          - Makes your character jump.
+    .hipheight [num]/e hipheight [num]- Adjusts visual hip height (e.g., ".hipheight 0").
+    .gravity [num] /e gravity [num] - Sets client-side workspace gravity (e.g., ".gravity 100"). Default is ~196.
+    .platformstand /e platformstand - Forces character into PlatformStand state (stun). Use .unfollow to stop.
+    .spin [speed]  /e spin [speed]  - Spins your character locally. Use .unfollow to stop.
+    .sitwalk       /e sitwalk       - Uses sit animation while moving. Use .refresh to fix.
+    .reset         /e reset         - Resets your character.
+
+    -- Appearance --
+    .naked         /e naked         - Removes clothing textures (client-side).
+    .noface        /e noface        - Removes face decal.
     .animate [id]  /e animate [id]  - Plays animation by Asset ID (e.g., ".animate 507766388").
     .stopanim      /e stopanim      - Stops animation started by .animate.
-    .reset         /e reset         - Resets your character.
-    .rejoin        /e rejoin        - Makes you rejoin the current server.
+
+    -- Environment (Client-Side) --
+    .fov [num]     /e fov [num]     - Changes camera Field of View (default 70).
+    .day           /e day           - Sets time to day (client-side).
+    .night         /e night         - Sets time to night (client-side).
+    .fullbright    /e fullbright    - Max brightness, no fog (client-side). Use .refresh to reset lighting.
+    .nofog         /e nofog         - Removes fog (client-side).
+
+    -- Utility --
     .fling [player]/e fling [player]- Attempts to fling a player (NOTE: Requires server script, prints message).
 ]]
 
@@ -27,27 +49,23 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting") -- Added for environment commands
 
 -- Configuration
-local TARGET_USERNAME = "iamnotheone28" -- The username of the player whose commands you want to listen to (DEFAULT target)
+local TARGET_USERNAME = "iamnotheone28" -- Default target
 -- Command Constants...
-local GOTO_COMMAND = ".goto"
-local FOLLOW_COMMAND = ".follow"
-local FLY_COMMAND = ".fly"
-local ORBIT_COMMAND = ".orbit"
-local UNFOLLOW_COMMAND = ".unfollow"
-local UNFLY_COMMAND = ".unfly"
-local SPEED_COMMAND = ".speed"
-local JUMP_COMMAND = ".jump"
-local ANIMATE_COMMAND = ".animate"
-local STOPANIM_COMMAND = ".stopanim"
-local RESET_COMMAND = ".reset"
-local REJOIN_COMMAND = ".rejoin"
-local FLING_COMMAND = ".fling"
+local GOTO_COMMAND = ".goto"; local FOLLOW_COMMAND = ".follow"; local FLY_COMMAND = ".fly"; local ORBIT_COMMAND = ".orbit"; local BANG_COMMAND = ".bang"
+local UNFOLLOW_COMMAND = ".unfollow"; local UNFLY_COMMAND = ".unfly"; local SPEED_COMMAND = ".speed"; local JUMP_COMMAND = ".jump"
+local ANIMATE_COMMAND = ".animate"; local STOPANIM_COMMAND = ".stopanim"; local RESET_COMMAND = ".reset"; local REJOIN_COMMAND = ".rejoin"; local FLING_COMMAND = ".fling"
+local HIPHEIGHT_COMMAND = ".hipheight"; local GRAVITY_COMMAND = ".gravity"; local FOV_COMMAND = ".fov"; local DAY_COMMAND = ".day"; local NIGHT_COMMAND = ".night"
+local FULLBRIGHT_COMMAND = ".fullbright"; local NAKED_COMMAND = ".naked"; local NOFACE_COMMAND = ".noface"; local SPIN_COMMAND = ".spin"
+local PLATFORMSTAND_COMMAND = ".platformstand"; local SITWALK_COMMAND = ".sitwalk"; local NOFOG_COMMAND = ".nofog"
 -- Config Values...
 local MIN_FOLLOW_DISTANCE = 10
-local FLY_BEHIND_DISTANCE = 8; local FLY_HEIGHT_OFFSET = 5; local FLY_MAX_FORCE = Vector3.new(40000, 40000, 40000); local FLY_POSITION_P = 10000; local FLY_POSITION_D = 1250; local FLY_GYRO_MAX_TORQUE = Vector3.new(400000, 400000, 400000) * 5; local FLY_GYRO_P = 5000; local FLY_GYRO_D = 500
-local ORBIT_RADIUS = 20; local ORBIT_SPEED = 1; local ORBIT_HEIGHT_OFFSET = 5; local ORBIT_MAX_FORCE = Vector3.new(40000, 40000, 40000); local ORBIT_POSITION_P = 10000; local ORBIT_POSITION_D = 1250; local ORBIT_GYRO_MAX_TORQUE = Vector3.new(400000, 400000, 400000) * 5; local ORBIT_GYRO_P = 5000; local ORBIT_GYRO_D = 500
+local FLY_BEHIND_DISTANCE = 8; local FLY_HEIGHT_OFFSET = 5; local FLY_MAX_FORCE = Vector3.new(40000,40000,40000); local FLY_POSITION_P = 10000; local FLY_POSITION_D = 1250; local FLY_GYRO_MAX_TORQUE = Vector3.new(2000000,2000000,2000000); local FLY_GYRO_P = 5000; local FLY_GYRO_D = 500
+local ORBIT_RADIUS = 20; local ORBIT_SPEED = 1; local ORBIT_HEIGHT_OFFSET = 5; local ORBIT_MAX_FORCE = Vector3.new(40000,40000,40000); local ORBIT_POSITION_P = 10000; local ORBIT_POSITION_D = 1250; local ORBIT_GYRO_MAX_TORQUE = Vector3.new(2000000,2000000,2000000); local ORBIT_GYRO_P = 5000; local ORBIT_GYRO_D = 500
+local BANG_OFFSET = CFrame.new(0, 0, 1.2); local BANG_ANIM_ID = "148840371"
+local DEFAULT_GRAVITY = workspace.Gravity -- Store default gravity
 
 -- Player Variables
 local LocalPlayer = Players.LocalPlayer
@@ -58,146 +76,167 @@ local LocalRootPart = LocalCharacter:WaitForChild("HumanoidRootPart")
 local LocalAnimator = LocalHumanoid:WaitForChild("Animator")
 
 -- State Variables
-local isFollowing = false; local isFlying = false; local isOrbiting = false; local currentMovementTargetPlayer = nil; local currentOrbitAngle = 0; local movementConnection = nil; local bodyPos = nil; local bodyGyro = nil; local currentAnimTrack = nil
+local isFollowing = false; local isFlying = false; local isOrbiting = false; local isBanging = false; local isSpinning = false -- Added Spinning State
+local currentMovementTargetPlayer = nil; local currentBangTargetPlayer = nil
+local currentOrbitAngle = 0; local movementConnection = nil; local bodyPos = nil; local bodyGyro = nil; local currentAnimTrack = nil; local currentBangAnimTrack = nil; local spinVelocity = nil -- Added spin body mover
 
 -- Function to find the DEFAULT target player
 local function findDefaultTargetPlayer() TargetPlayer = Players:FindFirstChild(TARGET_USERNAME); return TargetPlayer end
 
--- == Player Finding Function (Partial Name Matching) == -- NEW / MODIFIED
+-- == Player Finding Function (Partial Name Matching) ==
 local function findPlayerByPartialName(partialName)
-    if not partialName or partialName == "" then return nil, "No name provided." end -- Should not happen if called correctly
-
-    local lowerPartialName = string.lower(partialName)
-    local matches = {}
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then -- Exclude self from potential matches
-             local lowerPlayerName = string.lower(player.Name)
-             if lowerPlayerName:sub(1, #lowerPartialName) == lowerPartialName then
-                 table.insert(matches, player)
-             end
-        end
-    end
-
-    if #matches == 1 then
-        return matches[1], nil -- Found exactly one match
-    elseif #matches == 0 then
-        return nil, "Player starting with '" .. partialName .. "' not found." -- No matches
-    else
-        -- Multiple matches
-        local nameList = {}
-        for _, matchedPlayer in ipairs(matches) do
-            table.insert(nameList, matchedPlayer.Name)
-        end
-        return nil, "Multiple players found: " .. table.concat(nameList, ", ") .. ". Please be more specific."
-    end
+    if not partialName or partialName == "" then return nil, "No name provided." end
+    local lowerPartialName = string.lower(partialName); local matches = {};
+    for _, player in ipairs(Players:GetPlayers()) do if player ~= LocalPlayer then local lowerPlayerName = string.lower(player.Name); if lowerPlayerName:sub(1, #lowerPartialName) == lowerPartialName then table.insert(matches, player) end end end
+    if #matches == 1 then return matches[1], nil elseif #matches == 0 then return nil, "Player starting with '" .. partialName .. "' not found." else local nameList = {}; for _, p in ipairs(matches) do table.insert(nameList, p.Name) end; return nil, "Multiple players found: " .. table.concat(nameList, ", ") .. ". Be more specific." end
 end
 
 -- == Noclip Functions ==
-local function setCharacterCollision(character, canCollide) if not character then return end; for _, part in ipairs(character:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = canCollide end end end
+local function setCharacterCollision(character, canCollide) if not character then return end; for _, p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = canCollide end end end
 local function enableNoclip(character) print("Stand Script: Enabling Noclip."); setCharacterCollision(character, false) end
 local function disableNoclip(character) print("Stand Script: Disabling Noclip."); setCharacterCollision(character, true) end
 
 -- == Animation Functions ==
-local function performStopAnimation() if currentAnimTrack then print("Stand Script: Stopping custom animation."); currentAnimTrack:Stop(); currentAnimTrack = nil else print("Stand Script: No custom animation is playing.") end end
-local function performPlayAnimation(animId) if not LocalAnimator then print("Stand Script: Animator not found."); return end; local idNum = tonumber(animId); if not idNum then print("Stand Script: Invalid animation ID provided:", animId); return end; performStopAnimation(); local a = Instance.new("Animation"); a.AnimationId = "rbxassetid://"..idNum; currentAnimTrack = LocalAnimator:LoadAnimation(a); if currentAnimTrack then print("Stand Script: Playing anim ID:", idNum); currentAnimTrack:Play(); currentAnimTrack.Looped = true else print("Stand Script: Failed to load animation.") end; a:Destroy() end
+local function performStopAnimation() if currentAnimTrack then print("Stopping custom anim."); currentAnimTrack:Stop(); currentAnimTrack = nil end; if currentBangAnimTrack then print("Stopping bang anim."); currentBangAnimTrack:Stop(); currentBangAnimTrack = nil end end
+local function performPlayAnimation(animId) if not LocalAnimator then print("Animator not found."); return end; local idNum = tonumber(animId); if not idNum then print("Invalid anim ID:", animId); return end; stopAllMovement(); local a=Instance.new("Animation"); a.AnimationId="rbxassetid://"..idNum; currentAnimTrack=LocalAnimator:LoadAnimation(a); if currentAnimTrack then print("Playing anim ID:", idNum); currentAnimTrack:Play(); currentAnimTrack.Looped = true else print("Failed to load anim.") end; a:Destroy() end
+local function playBangAnimation() if not LocalAnimator then return end; performStopAnimation(); local a=Instance.new("Animation"); a.AnimationId="rbxassetid://"..BANG_ANIM_ID; currentBangAnimTrack=LocalAnimator:LoadAnimation(a); if currentBangAnimTrack then currentBangAnimTrack:Play(0.1, 1, 3); currentBangAnimTrack.Looped=true end; a:Destroy() end
 
 -- == Cleanup / Stopping Functions ==
-local function destroyBodyMovers() if bodyPos then bodyPos:Destroy(); bodyPos = nil end; if bodyGyro then bodyGyro:Destroy(); bodyGyro = nil end; if LocalHumanoid and LocalHumanoid.Health > 0 then LocalHumanoid.PlatformStand = false end end
-local function stopFlying() if not isFlying then return end; print("Stand Script: Stopping fly."); isFlying = false; disableNoclip(LocalCharacter) end
-local function stopOrbiting() if not isOrbiting then return end; print("Stand Script: Stopping orbit."); isOrbiting = false end
-local function stopFollowing() if not isFollowing then return end; print("Stand Script: Stopping ground follow."); isFollowing = false; if LocalHumanoid and LocalRootPart and LocalHumanoid.Health > 0 then LocalHumanoid:MoveTo(LocalRootPart.Position) end end
-local function stopAllMovement() local stopped = isFollowing or isFlying or isOrbiting or currentAnimTrack; if isFollowing then stopFollowing() end; if isFlying then stopFlying() end; if isOrbiting then stopOrbiting() end; if not isFlying and not isOrbiting then destroyBodyMovers() end; if currentAnimTrack then performStopAnimation() end; currentMovementTargetPlayer = nil; if stopped then print("Stand Script: All movement modes/animations stopped.") end end
+local function destroyBodyMovers() if bodyPos then bodyPos:Destroy(); bodyPos=nil end; if bodyGyro then bodyGyro:Destroy(); bodyGyro=nil end; if spinVelocity then spinVelocity:Destroy(); spinVelocity=nil end; if LocalHumanoid and LocalHumanoid.Health>0 then LocalHumanoid.PlatformStand=false end end -- Added spinVelocity cleanup
+local function stopFlying() if not isFlying then return end; print("Stopping fly."); isFlying=false; disableNoclip(LocalCharacter) end
+local function stopOrbiting() if not isOrbiting then return end; print("Stopping orbit."); isOrbiting=false end
+local function stopFollowing() if not isFollowing then return end; print("Stopping ground follow."); isFollowing=false; if LocalHumanoid and LocalRootPart and LocalHumanoid.Health>0 then LocalHumanoid:MoveTo(LocalRootPart.Position) end end
+local function stopBang() if not isBanging then return end; print("Stopping bang effect."); isBanging=false; currentBangTargetPlayer=nil; if currentBangAnimTrack then currentBangAnimTrack:Stop(); currentBangAnimTrack=nil end; if LocalHumanoid then LocalHumanoid.PlatformStand=false end end
+local function stopSpin() -- NEW
+    if not isSpinning then return end; print("Stopping spin.")
+    isSpinning = false
+    if spinVelocity then spinVelocity:Destroy(); spinVelocity = nil end
+end
+local function stopAllMovement() -- Modified to include spin
+    local stopped = isFollowing or isFlying or isOrbiting or isBanging or isSpinning or currentAnimTrack;
+    if isFollowing then stopFollowing() end
+    if isFlying then stopFlying() end
+    if isOrbiting then stopOrbiting() end
+    if isBanging then stopBang() end
+    if isSpinning then stopSpin() end -- NEW: Stop spin
+    if not isFlying and not isOrbiting and not isSpinning then destroyBodyMovers() end -- Destroy movers only if fly/orbit/spin off
+    if currentAnimTrack or currentBangAnimTrack then performStopAnimation() end -- Handles custom and bang anims
+    currentMovementTargetPlayer = nil; currentBangTargetPlayer = nil; -- Clear targets
+    if stopped then print("Stand Script: All movement modes/animations stopped.") end
+end
 
--- == Action Functions ==
-local function performTeleport(targetPlayerOverride) stopAllMovement(); local target = targetPlayerOverride or TargetPlayer; if not target then print("Teleport target not found."); return end; local tc = target.Character; local lc = LocalPlayer.Character; local lr = lc and lc:FindFirstChild("HumanoidRootPart"); if lc and lr and tc and tc:FindFirstChild("HumanoidRootPart") then print("Teleporting to "..target.Name); local tp = tc.HumanoidRootPart.Position; lr.CFrame = CFrame.new(tp+Vector3.new(0,5,0)) else print("Could not teleport.") end end
+-- == Action Functions == (Added new client-side functions)
+local function performTeleport(targetPlayerOverride) stopAllMovement(); local target=targetPlayerOverride or TargetPlayer; if not target then print("Teleport target not found."); return end; local tc=target.Character; local lc=LocalPlayer.Character; local lr=lc and lc:FindFirstChild("HumanoidRootPart"); if lc and lr and tc and tc:FindFirstChild("HumanoidRootPart") then print("Teleporting to "..target.Name); local tp=tc.HumanoidRootPart.Position; lr.CFrame=CFrame.new(tp+Vector3.new(0,5,0)) else print("Could not teleport.") end end
 local function performReset() stopAllMovement(); print("Resetting."); local lc=LocalPlayer.Character; local lh=lc and lc:FindFirstChildOfClass("Humanoid"); if lh then lh.Health = 0 else print("Cannot reset.") end end
 local function performRejoin() stopAllMovement(); print("Rejoining."); local pid=game.PlaceId; if pid and pid>0 then print("Rejoining place: "..pid); local s,e=pcall(function() TeleportService:Teleport(pid, LocalPlayer) end); if not s then print("Rejoin failed: "..tostring(e)) end else print("Cannot get PlaceId.") end end
 local function performJump() if LocalHumanoid then print("Jumping."); LocalHumanoid.Jump = true else print("Cannot jump.") end end
 local function performSetSpeed(value) if LocalHumanoid then local s=tonumber(value); if s and s>0 then print("Setting speed:",s); LocalHumanoid.WalkSpeed=s else print("Invalid speed:",value) end else print("Cannot set speed.") end end
-local function performFlingCheck(targetPlayerName) if not targetPlayerName or targetPlayerName=="" then print("Fling: specify player name."); return end; print("Flinging '"..targetPlayerName.."' requires server script.") end
-local function startFollowing(targetPlayerOverride) stopAllMovement(); local target = targetPlayerOverride or TargetPlayer; if not target then print("Follow target not found."); return end; if isFollowing and currentMovementTargetPlayer==target then print("Already following "..target.Name); return end; print("Following "..target.Name); isFollowing=true; currentMovementTargetPlayer=target end
+local function performFlingCheck(targetPlayerName) if not targetPlayerName or targetPlayerName=="" then print("Fling: specify player name."); return end; print("Stand Script: Flinging other players ('".. targetPlayerName .."') requires server-side code.") end
+local function performHipHeight(value) if LocalHumanoid then local h=tonumber(value); if h then print("Setting HipHeight:",h); LocalHumanoid.HipHeight=h else print("Invalid HipHeight:",value) end else print("Cannot set HipHeight.") end end
+local function performGravity(value) local g=tonumber(value); if g then print("Setting Client Gravity:",g); workspace.Gravity=g else print("Invalid Gravity:",value) end end
+local function performFov(value) local f=tonumber(value); if f and f>0 and f<121 then print("Setting FOV:",f); workspace.CurrentCamera.FieldOfView=f else print("Invalid FOV (1-120):",value) end end
+local function performDay() print("Setting time to Day (Client)."); Lighting.ClockTime=14 end
+local function performNight() print("Setting time to Night (Client)."); Lighting.ClockTime=0 end
+local function performFullbright() print("Enabling Fullbright (Client)."); Lighting.Brightness=2; Lighting.ClockTime=14; Lighting.FogEnd=100000; Lighting.GlobalShadows=false; Lighting.OutdoorAmbient=Color3.fromRGB(128,128,128) end
+local function performNoFog() print("Removing Fog (Client)."); Lighting.FogEnd=100000 end
+local function performNaked() print("Removing clothes (Client)."); for _,v in ipairs(LocalCharacter:GetDescendants()) do if v:IsA("Clothing") or v:IsA("ShirtGraphic") then v:Destroy() end end end
+local function performNoFace() print("Removing face."); for _,v in ipairs(LocalCharacter.Head:GetDescendants()) do if v:IsA("Decal") and v.Name=="face" then v:Destroy() end end end
+local function performPlatformStand() stopAllMovement(); print("Enabling PlatformStand."); if LocalHumanoid then LocalHumanoid.PlatformStand=true; isSpinning=false; -- Ensure spin stops if platform standing end end
+local function performSitWalk() stopAllMovement(); print("Enabling SitWalk."); local anims=LocalCharacter.Animate; local sitId=anims.sit:FindFirstChildWhichIsA("Animation").AnimationId; anims.idle:FindFirstChildWhichIsA("Animation").AnimationId=sitId; anims.walk:FindFirstChildWhichIsA("Animation").AnimationId=sitId; anims.run:FindFirstChildWhichIsA("Animation").AnimationId=sitId; anims.jump:FindFirstChildWhichIsA("Animation").AnimationId=sitId; if LocalHumanoid then LocalHumanoid.HipHeight=not r15(LocalPlayer) and -1.5 or 0.5 end; print("Use .refresh or .reset to fix.") end
+local function startFollowing(targetPlayerOverride) stopAllMovement(); local target=targetPlayerOverride or TargetPlayer; if not target then print("Follow target not found."); return end; if isFollowing and currentMovementTargetPlayer==target then print("Already following "..target.Name); return end; print("Following "..target.Name); isFollowing=true; currentMovementTargetPlayer=target end
 local function createBodyMovers(isOrbit) if not LocalRootPart then return false end; destroyBodyMovers(); local p,d,mf,gp,gd,mt; if isOrbit then p,d,mf,gp,gd,mt=ORBIT_POSITION_P,ORBIT_POSITION_D,ORBIT_MAX_FORCE,ORBIT_GYRO_P,ORBIT_GYRO_D,ORBIT_GYRO_MAX_TORQUE else p,d,mf,gp,gd,mt=FLY_POSITION_P,FLY_POSITION_D,FLY_MAX_FORCE,FLY_GYRO_P,FLY_GYRO_D,FLY_GYRO_MAX_TORQUE end; bodyPos=Instance.new("BodyPosition", LocalRootPart); bodyPos.Name="StandBodyPosition"; bodyPos.MaxForce=mf; bodyPos.P=p; bodyPos.D=d; bodyPos.Position=LocalRootPart.Position; bodyGyro=Instance.new("BodyGyro", LocalRootPart); bodyGyro.Name="StandBodyGyro"; bodyGyro.MaxTorque=mt; bodyGyro.P=gp; bodyGyro.D=gd; bodyGyro.CFrame=LocalRootPart.CFrame; if LocalHumanoid then LocalHumanoid.PlatformStand=true end; print("Body movers created."); return true end
-local function startFlying(targetPlayerOverride) stopAllMovement(); local target = targetPlayerOverride or TargetPlayer; if not target then print("Fly target not found."); return end; if isFlying and currentMovementTargetPlayer==target then print("Already flying to "..target.Name); return end; local lc=LocalPlayer.Character; local lh=lc and lc:FindFirstChild("Humanoid"); local lr=lc and lc:FindFirstChild("HumanoidRootPart"); if not (lc and lh and lr) then print("Cannot fly, local char missing."); return end; print("Flying to "..target.Name); if createBodyMovers(false) then isFlying=true; currentMovementTargetPlayer=target; enableNoclip(lc) else print("Failed fly movers."); stopAllMovement() end end
-local function startOrbiting(targetPlayerOverride) stopAllMovement(); local target = targetPlayerOverride or TargetPlayer; if not target then print("Orbit target not found."); return end; if isOrbiting and currentMovementTargetPlayer==target then print("Already orbiting "..target.Name); return end; local lc=LocalPlayer.Character; local lh=lc and lc:FindFirstChild("Humanoid"); local lr=lc and lc:FindFirstChild("HumanoidRootPart"); if not (lc and lh and lr) then print("Cannot orbit, local char missing."); return end; print("Orbiting "..target.Name); if createBodyMovers(true) then isOrbiting=true; currentMovementTargetPlayer=target; currentOrbitAngle=0 else print("Failed orbit movers."); stopAllMovement() end end
--- == Movement Update Loop (Heartbeat) ==
-local function updateMovement(deltaTime)
-    if not LocalCharacter or not LocalHumanoid or not LocalRootPart or LocalHumanoid.Health <= 0 then if isFollowing or isFlying or isOrbiting then stopAllMovement() end; return end
-    local effectiveTarget = currentMovementTargetPlayer or TargetPlayer; if not effectiveTarget then if isFollowing or isFlying or isOrbiting then print("Stopping movement (Effective target lost)."); stopAllMovement() end; return end -- Added check for effectiveTarget itself
-    local targetCharacter = effectiveTarget.Character; local targetRootPart = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart"); local targetHumanoid = targetCharacter and targetCharacter:FindFirstChild("Humanoid")
-    if not (targetCharacter and targetRootPart and targetHumanoid and targetHumanoid.Health > 0) then if isFollowing or isFlying or isOrbiting then print("Stopping movement (Target '" .. effectiveTarget.Name .. "' invalid/died)."); stopAllMovement() end; return end
-    if isFollowing then if (LocalRootPart.Position - targetRootPart.Position).Magnitude > MIN_FOLLOW_DISTANCE then LocalHumanoid:MoveTo(targetRootPart.Position) end end
-    local moversValid = bodyPos and bodyGyro and bodyPos.Parent and bodyGyro.Parent; if (isFlying or isOrbiting) and not moversValid then print("Body movers missing/invalid, stopping."); stopAllMovement(); return end
-    if isFlying then local tl = targetRootPart.CFrame.LookVector; local o = tl * -FLY_BEHIND_DISTANCE; local dp = targetRootPart.Position + o + Vector3.new(0, FLY_HEIGHT_OFFSET, 0); bodyPos.Position = dp; if (targetRootPart.Position - LocalRootPart.Position).Magnitude > 0.1 then bodyGyro.CFrame = CFrame.lookAt(LocalRootPart.Position, targetRootPart.Position) end; if not LocalHumanoid.PlatformStand then LocalHumanoid.PlatformStand = true end end
-    if isOrbiting then currentOrbitAngle = (currentOrbitAngle + ORBIT_SPEED * deltaTime) % (2 * math.pi); local xo = math.cos(currentOrbitAngle) * ORBIT_RADIUS; local zo = math.sin(currentOrbitAngle) * ORBIT_RADIUS; local dp = targetRootPart.Position + Vector3.new(xo, ORBIT_HEIGHT_OFFSET, zo); bodyPos.Position = dp; if (targetRootPart.Position - LocalRootPart.Position).Magnitude > 0.1 then bodyGyro.CFrame = CFrame.lookAt(LocalRootPart.Position, targetRootPart.Position) end; if not LocalHumanoid.PlatformStand then LocalHumanoid.PlatformStand = true end end
+local function startFlying(targetPlayerOverride) stopAllMovement(); local target=targetPlayerOverride or TargetPlayer; if not target then print("Fly target not found."); return end; if isFlying and currentMovementTargetPlayer==target then print("Already flying to "..target.Name); return end; local lc=LocalPlayer.Character; local lh=lc and lc:FindFirstChild("Humanoid"); local lr=lc and lc:FindFirstChild("HumanoidRootPart"); if not (lc and lh and lr) then print("Cannot fly, local char missing."); return end; print("Flying to "..target.Name); if createBodyMovers(false) then isFlying=true; currentMovementTargetPlayer=target; enableNoclip(lc) else print("Failed fly movers."); stopAllMovement() end end
+local function startOrbiting(targetPlayerOverride) stopAllMovement(); local target=targetPlayerOverride or TargetPlayer; if not target then print("Orbit target not found."); return end; if isOrbiting and currentMovementTargetPlayer==target then print("Already orbiting "..target.Name); return end; local lc=LocalPlayer.Character; local lh=lc and lc:FindFirstChild("Humanoid"); local lr=lc and lc:FindFirstChild("HumanoidRootPart"); if not (lc and lh and lr) then print("Cannot orbit, local char missing."); return end; print("Orbiting "..target.Name); if createBodyMovers(true) then isOrbiting=true; currentMovementTargetPlayer=target; currentOrbitAngle=0 else print("Failed orbit movers."); stopAllMovement() end end
+local function startBang(targetPlayerOverride) stopAllMovement(); local target=targetPlayerOverride or TargetPlayer; if not target then print("Bang target not found."); return end; if isBanging and currentBangTargetPlayer==target then print("Already banging "..target.Name); return end; local lc=LocalPlayer.Character; local lh=lc and lc:FindFirstChild("Humanoid"); local lr=lc and lc:FindFirstChild("HumanoidRootPart"); if not (lc and lh and lr) then print("Cannot bang, local char missing."); return end; print("Starting bang effect on "..target.Name); isBanging=true; currentBangTargetPlayer=target; playBangAnimation(); if LocalHumanoid then LocalHumanoid.PlatformStand=true end end
+local function startSpin(speed) -- NEW
+    stopAllMovement()
+    local spinSpeed = tonumber(speed) or 20
+    print("Starting spin at speed:", spinSpeed)
+    if spinVelocity then spinVelocity:Destroy() end -- Clean previous just in case
+    spinVelocity = Instance.new("BodyAngularVelocity", LocalRootPart)
+    spinVelocity.Name = "StandSpinVelocity"
+    spinVelocity.MaxTorque = Vector3.new(0, math.huge, 0)
+    spinVelocity.AngularVelocity = Vector3.new(0, spinSpeed, 0)
+    isSpinning = true
+    -- Ensure PlatformStand is off so character isn't frozen while spinning
+    if LocalHumanoid then LocalHumanoid.PlatformStand = false end
 end
 
--- == Chat Processing ==
+-- == Movement Update Loop (Heartbeat) == (No changes needed here for new commands)
+local function updateMovement(deltaTime) if not LocalCharacter or not LocalHumanoid or not LocalRootPart or LocalHumanoid.Health<=0 then if isFollowing or isFlying or isOrbiting or isBanging or isSpinning then stopAllMovement() end; return end; local movementTarget=currentMovementTargetPlayer or TargetPlayer; local bangTarget=currentBangTargetPlayer; local effectiveTarget=nil; if isFollowing or isFlying or isOrbiting then effectiveTarget=movementTarget elseif isBanging then effectiveTarget=bangTarget elseif isSpinning then effectiveTarget=nil end; local targetCharacter=effectiveTarget and effectiveTarget.Character; local targetRootPart=targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart"); local targetHumanoid=targetCharacter and targetCharacter:FindFirstChild("Humanoid"); if (isFollowing or isFlying or isOrbiting or isBanging) and not (effectiveTarget and targetCharacter and targetRootPart and targetHumanoid and targetHumanoid.Health>0) then print("Stopping movement/effect (Target '"..(effectiveTarget and effectiveTarget.Name or "nil").."' invalid/died)."); stopAllMovement(); return end; if isFollowing then if (LocalRootPart.Position-targetRootPart.Position).Magnitude>MIN_FOLLOW_DISTANCE then LocalHumanoid:MoveTo(targetRootPart.Position) end end; local moversValid=bodyPos and bodyGyro and bodyPos.Parent and bodyGyro.Parent; if (isFlying or isOrbiting) and not moversValid then print("Body movers missing/invalid, stopping."); stopAllMovement(); return end; if isFlying then local tl=targetRootPart.CFrame.LookVector; local o=tl*-FLY_BEHIND_DISTANCE; local dp=targetRootPart.Position+o+Vector3.new(0,FLY_HEIGHT_OFFSET,0); bodyPos.Position=dp; if (targetRootPart.Position-LocalRootPart.Position).Magnitude>0.1 then bodyGyro.CFrame=CFrame.lookAt(LocalRootPart.Position, targetRootPart.Position) end; if not LocalHumanoid.PlatformStand then LocalHumanoid.PlatformStand=true end end; if isOrbiting then currentOrbitAngle=(currentOrbitAngle+ORBIT_SPEED*deltaTime)%(2*math.pi); local xo=math.cos(currentOrbitAngle)*ORBIT_RADIUS; local zo=math.sin(currentOrbitAngle)*ORBIT_RADIUS; local dp=targetRootPart.Position+Vector3.new(xo,ORBIT_HEIGHT_OFFSET,zo); bodyPos.Position=dp; if (targetRootPart.Position-LocalRootPart.Position).Magnitude>0.1 then bodyGyro.CFrame=CFrame.lookAt(LocalRootPart.Position, targetRootPart.Position) end; if not LocalHumanoid.PlatformStand then LocalHumanoid.PlatformStand=true end end; if isBanging then local desiredCFrame=targetRootPart.CFrame*BANG_OFFSET; LocalRootPart.CFrame=desiredCFrame; if LocalHumanoid and not LocalHumanoid.PlatformStand then LocalHumanoid.PlatformStand=true end end end
+
+-- == Chat Processing == (Added new commands)
 local function onPlayerChatted(speaker, message)
     if not (speaker and speaker.Name == TARGET_USERNAME) then return end
-    local trimmedMessage = message:match("^%s*(.-)%s*$"); if not trimmedMessage then return end; local lowerMessage = string.lower(trimmedMessage); local commandPart = nil; local argumentPart = nil; local commandFound = false
-    local function checkCommand(cmdStr, baseCmdConst) local prefix = cmdStr.." "; if lowerMessage == cmdStr or lowerMessage:sub(1, #prefix) == prefix then commandPart = baseCmdConst; if lowerMessage:sub(1, #prefix) == prefix then argumentPart = trimmedMessage:sub(#prefix):match("^%s*(.-)%s*$") end; return true end; return false end
-    local function checkPrefixCommand(cmdStrNoDot, baseCmdConst) local p1="/e "..cmdStrNoDot; local p1s=p1.." "; local p2="/e ."..cmdStrNoDot; local p2s=p2.." "; if lowerMessage==p1 or lowerMessage:sub(1,#p1s)==p1s then commandPart=baseCmdConst; if lowerMessage:sub(1,#p1s)==p1s then argumentPart=trimmedMessage:sub(#p1s):match("^%s*(.-)%s*$") end; return true end; if lowerMessage==p2 or lowerMessage:sub(1,#p2s)==p2s then commandPart=baseCmdConst; if lowerMessage:sub(1,#p2s)==p2s then argumentPart=trimmedMessage:sub(#p2s):match("^%s*(.-)%s*$") end; return true end; return false end
+    local trimmedMessage=message:match("^%s*(.-)%s*$"); if not trimmedMessage then return end; local lowerMessage=string.lower(trimmedMessage); local commandPart=nil; local argumentPart=nil; local commandFound=false
+    local function checkCommand(cmdStr,baseCmdConst) local p=cmdStr.." "; if lowerMessage==cmdStr or lowerMessage:sub(1,#p)==p then commandPart=baseCmdConst; if lowerMessage:sub(1,#p)==p then argumentPart=trimmedMessage:sub(#p):match("^%s*(.-)%s*$") end; return true end; return false end
+    local function checkPrefixCommand(cmdStrNoDot,baseCmdConst) local p1="/e "..cmdStrNoDot; local p1s=p1.." "; local p2="/e ."..cmdStrNoDot; local p2s=p2.." "; if lowerMessage==p1 or lowerMessage:sub(1,#p1s)==p1s then commandPart=baseCmdConst; if lowerMessage:sub(1,#p1s)==p1s then argumentPart=trimmedMessage:sub(#p1s):match("^%s*(.-)%s*$") end; return true end; if lowerMessage==p2 or lowerMessage:sub(1,#p2s)==p2s then commandPart=baseCmdConst; if lowerMessage:sub(1,#p2s)==p2s then argumentPart=trimmedMessage:sub(#p2s):match("^%s*(.-)%s*$") end; return true end; return false end
 
-    -- Check commands (Order matters slightly if commands share prefixes)
-    if checkCommand(GOTO_COMMAND, GOTO_COMMAND) then commandFound = true
-    elseif checkCommand(FOLLOW_COMMAND, FOLLOW_COMMAND) then commandFound = true
-    elseif checkCommand(FLY_COMMAND, FLY_COMMAND) then commandFound = true
-    elseif checkCommand(ORBIT_COMMAND, ORBIT_COMMAND) then commandFound = true
-    elseif checkCommand(UNFOLLOW_COMMAND, UNFOLLOW_COMMAND) then commandFound = true
-    elseif checkCommand(UNFLY_COMMAND, UNFLY_COMMAND) then commandFound = true
-    elseif checkCommand(SPEED_COMMAND, SPEED_COMMAND) then commandFound = true
-    elseif checkCommand(JUMP_COMMAND, JUMP_COMMAND) then commandFound = true
-    elseif checkCommand(ANIMATE_COMMAND, ANIMATE_COMMAND) then commandFound = true
-    elseif checkCommand(STOPANIM_COMMAND, STOPANIM_COMMAND) then commandFound = true
-    elseif checkCommand(RESET_COMMAND, RESET_COMMAND) then commandFound = true
-    elseif checkCommand(REJOIN_COMMAND, REJOIN_COMMAND) then commandFound = true
-    elseif checkCommand(FLING_COMMAND, FLING_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("goto", GOTO_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("follow", FOLLOW_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("fly", FLY_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("orbit", ORBIT_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("unfollow", UNFOLLOW_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("unfly", UNFLY_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("speed", SPEED_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("jump", JUMP_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("animate", ANIMATE_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("stopanim", STOPANIM_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("reset", RESET_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("rejoin", REJOIN_COMMAND) then commandFound = true
-    elseif checkPrefixCommand("fling", FLING_COMMAND) then commandFound = true
+    -- Check commands
+    if checkCommand(GOTO_COMMAND, GOTO_COMMAND) then commandFound=true
+    elseif checkCommand(FOLLOW_COMMAND, FOLLOW_COMMAND) then commandFound=true
+    elseif checkCommand(FLY_COMMAND, FLY_COMMAND) then commandFound=true
+    elseif checkCommand(ORBIT_COMMAND, ORBIT_COMMAND) then commandFound=true
+    elseif checkCommand(BANG_COMMAND, BANG_COMMAND) then commandFound=true
+    elseif checkCommand(UNFOLLOW_COMMAND, UNFOLLOW_COMMAND) then commandFound=true
+    elseif checkCommand(UNFLY_COMMAND, UNFLY_COMMAND) then commandFound=true
+    elseif checkCommand(SPEED_COMMAND, SPEED_COMMAND) then commandFound=true
+    elseif checkCommand(JUMP_COMMAND, JUMP_COMMAND) then commandFound=true
+    elseif checkCommand(ANIMATE_COMMAND, ANIMATE_COMMAND) then commandFound=true
+    elseif checkCommand(STOPANIM_COMMAND, STOPANIM_COMMAND) then commandFound=true
+    elseif checkCommand(RESET_COMMAND, RESET_COMMAND) then commandFound=true
+    elseif checkCommand(REJOIN_COMMAND, REJOIN_COMMAND) then commandFound=true
+    elseif checkCommand(FLING_COMMAND, FLING_COMMAND) then commandFound=true
+    elseif checkCommand(HIPHEIGHT_COMMAND, HIPHEIGHT_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(GRAVITY_COMMAND, GRAVITY_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(FOV_COMMAND, FOV_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(DAY_COMMAND, DAY_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(NIGHT_COMMAND, NIGHT_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(FULLBRIGHT_COMMAND, FULLBRIGHT_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(NOFOG_COMMAND, NOFOG_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(NAKED_COMMAND, NAKED_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(NOFACE_COMMAND, NOFACE_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(SPIN_COMMAND, SPIN_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(PLATFORMSTAND_COMMAND, PLATFORMSTAND_COMMAND) then commandFound=true -- NEW
+    elseif checkCommand(SITWALK_COMMAND, SITWALK_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("goto", GOTO_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("follow", FOLLOW_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("fly", FLY_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("orbit", ORBIT_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("bang", BANG_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("unfollow", UNFOLLOW_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("unfly", UNFLY_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("speed", SPEED_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("jump", JUMP_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("animate", ANIMATE_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("stopanim", STOPANIM_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("reset", RESET_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("rejoin", REJOIN_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("fling", FLING_COMMAND) then commandFound=true
+    elseif checkPrefixCommand("hipheight", HIPHEIGHT_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("gravity", GRAVITY_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("fov", FOV_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("day", DAY_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("night", NIGHT_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("fullbright", FULLBRIGHT_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("nofog", NOFOG_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("naked", NAKED_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("noface", NOFACE_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("spin", SPIN_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("platformstand", PLATFORMSTAND_COMMAND) then commandFound=true -- NEW
+    elseif checkPrefixCommand("sitwalk", SITWALK_COMMAND) then commandFound=true -- NEW
     end
 
-    -- Execute action
     if commandFound and commandPart then
         print(string.format("Stand Script: Cmd='%s', Arg='%s'", commandPart, argumentPart or "nil"))
+        local targetPlayerOverride=nil; local needsTargetCheck=(commandPart==GOTO_COMMAND or commandPart==FOLLOW_COMMAND or commandPart==FLY_COMMAND or commandPart==ORBIT_COMMAND or commandPart==BANG_COMMAND);
+        if needsTargetCheck and argumentPart and argumentPart~="" then local foundPlayer,errorMsg=findPlayerByPartialName(argumentPart); if errorMsg then print("Stand Script: "..errorMsg); return end; if foundPlayer then if foundPlayer==LocalPlayer then print("Cannot target self for '"..commandPart.."'."); return end; targetPlayerOverride=foundPlayer; print("Resolved target to '"..foundPlayer.Name.."'") end end
 
-        -- Check for target override using partial name matching
-        local targetPlayerOverride = nil
-        local needsTargetOverrideCheck = (commandPart == GOTO_COMMAND or commandPart == FOLLOW_COMMAND or commandPart == FLY_COMMAND or commandPart == ORBIT_COMMAND)
-        local isFlingCommand = (commandPart == FLING_COMMAND) -- Fling only needs name, not player obj
-
-        if needsTargetOverrideCheck and argumentPart and argumentPart ~= "" then
-            local foundPlayer, errorMsg = findPlayerByPartialName(argumentPart)
-            if errorMsg then
-                print("Stand Script: " .. errorMsg)
-                return -- Stop processing if error finding player (not found or ambiguous)
-            elseif foundPlayer then
-                 if foundPlayer == LocalPlayer then
-                     print("Stand Script: Cannot target self for command '" .. commandPart .. "'.")
-                     return -- Don't execute if targeting self
-                 end
-                 targetPlayerOverride = foundPlayer -- Store the found player object
-                 print("Stand Script: Resolved target to '"..foundPlayer.Name.."'")
-            -- If foundPlayer and errorMsg are nil, something unexpected happened, fallback to default
-            end
-        end
-
-        -- Call appropriate function
         if commandPart == GOTO_COMMAND then performTeleport(targetPlayerOverride)
         elseif commandPart == FOLLOW_COMMAND then startFollowing(targetPlayerOverride)
         elseif commandPart == FLY_COMMAND then startFlying(targetPlayerOverride)
         elseif commandPart == ORBIT_COMMAND then startOrbiting(targetPlayerOverride)
+        elseif commandPart == BANG_COMMAND then startBang(targetPlayerOverride)
         elseif commandPart == UNFOLLOW_COMMAND then stopAllMovement()
         elseif commandPart == UNFLY_COMMAND then stopAllMovement()
         elseif commandPart == SPEED_COMMAND then performSetSpeed(argumentPart)
@@ -206,20 +245,29 @@ local function onPlayerChatted(speaker, message)
         elseif commandPart == STOPANIM_COMMAND then performStopAnimation()
         elseif commandPart == RESET_COMMAND then performReset()
         elseif commandPart == REJOIN_COMMAND then performRejoin()
-        elseif commandPart == FLING_COMMAND then performFlingCheck(argumentPart) -- Fling uses name directly
+        elseif commandPart == FLING_COMMAND then performFlingCheck(argumentPart)
+        elseif commandPart == HIPHEIGHT_COMMAND then performHipHeight(argumentPart) -- NEW
+        elseif commandPart == GRAVITY_COMMAND then performGravity(argumentPart) -- NEW
+        elseif commandPart == FOV_COMMAND then performFov(argumentPart) -- NEW
+        elseif commandPart == DAY_COMMAND then performDay() -- NEW
+        elseif commandPart == NIGHT_COMMAND then performNight() -- NEW
+        elseif commandPart == FULLBRIGHT_COMMAND then performFullbright() -- NEW
+        elseif commandPart == NOFOG_COMMAND then performNoFog() -- NEW
+        elseif commandPart == NAKED_COMMAND then performNaked() -- NEW
+        elseif commandPart == NOFACE_COMMAND then performNoFace() -- NEW
+        elseif commandPart == SPIN_COMMAND then startSpin(argumentPart) -- NEW
+        elseif commandPart == PLATFORMSTAND_COMMAND then performPlatformStand() -- NEW
+        elseif commandPart == SITWALK_COMMAND then performSitWalk() -- NEW
         end
     end
 end
 
--- == Event Connections & Initialization ==
-local function connectChat(player) if player.Name == TARGET_USERNAME then if not TargetPlayer then print("Target '"..TARGET_USERNAME.."' found."); TargetPlayer=player; player.Chatted:Connect(function(m) task.spawn(onPlayerChatted,player,m) end) else print("Re-establishing listener for "..TARGET_USERNAME); player.Chatted:Connect(function(m) task.spawn(onPlayerChatted,player,m) end) end end end
-local function onCharacterAdded(character) print("Local character added/respawned."); stopAllMovement(); LocalCharacter=character; LocalHumanoid=character:WaitForChild("Humanoid"); LocalRootPart=character:WaitForChild("HumanoidRootPart"); LocalAnimator=LocalHumanoid and LocalHumanoid:FindFirstChild("Animator") or (LocalHumanoid and LocalHumanoid:WaitForChild("Animator")); isFollowing,isFlying,isOrbiting=false,false,false; bodyPos,bodyGyro,currentAnimTrack=nil,nil,nil; currentMovementTargetPlayer=nil; disableNoclip(character); if LocalHumanoid then LocalHumanoid.PlatformStand=false end; if LocalHumanoid then LocalHumanoid.Died:Connect(function() print("Local humanoid died.") end) end end
+-- == Event Connections & Initialization == (Mostly identical logic)
+local function connectChat(player) if player.Name==TARGET_USERNAME then if not TargetPlayer then print("Target '"..TARGET_USERNAME.."' found."); TargetPlayer=player; player.Chatted:Connect(function(m) task.spawn(onPlayerChatted,player,m) end) else print("Re-establishing listener for "..TARGET_USERNAME); player.Chatted:Connect(function(m) task.spawn(onPlayerChatted,player,m) end) end end end
+local function onCharacterAdded(character) print("Local character added/respawned."); stopAllMovement(); LocalCharacter=character; LocalHumanoid=character:WaitForChild("Humanoid"); LocalRootPart=character:WaitForChild("HumanoidRootPart"); LocalAnimator=LocalHumanoid and LocalHumanoid:FindFirstChild("Animator") or (LocalHumanoid and LocalHumanoid:WaitForChild("Animator")); isFollowing,isFlying,isOrbiting,isBanging,isSpinning=false,false,false,false,false; bodyPos,bodyGyro,currentAnimTrack,currentBangAnimTrack,spinVelocity=nil,nil,nil,nil,nil; currentMovementTargetPlayer=nil; currentBangTargetPlayer=nil; disableNoclip(character); if LocalHumanoid then LocalHumanoid.PlatformStand=false end; if LocalHumanoid then LocalHumanoid.Died:Connect(function() print("Local humanoid died.") end) end end
 findDefaultTargetPlayer(); if TargetPlayer then connectChat(TargetPlayer) end
 Players.PlayerAdded:Connect(function(p) if p.Name == TARGET_USERNAME then findDefaultTargetPlayer(); connectChat(p) end end)
-Players.PlayerRemoving:Connect(function(p)
-    if p and TargetPlayer and p == TargetPlayer then print("Default target left."); if currentMovementTargetPlayer==TargetPlayer then stopAllMovement() end; TargetPlayer=nil; end -- Stop if default target leaves AND they were the current move target. Clear TargetPlayer ref.
-    if p and currentMovementTargetPlayer and p == currentMovementTargetPlayer then print("Current movement target left."); stopAllMovement() end -- Stop if specific move target leaves (this also clears currentMovementTargetPlayer)
-end)
+Players.PlayerRemoving:Connect(function(p) if p and TargetPlayer and p==TargetPlayer then print("Default target left."); if currentMovementTargetPlayer==TargetPlayer or currentBangTargetPlayer==TargetPlayer then stopAllMovement() end; TargetPlayer=nil; end; if p and currentMovementTargetPlayer and p==currentMovementTargetPlayer then print("Current movement target left."); stopAllMovement() end; if p and currentBangTargetPlayer and p==currentBangTargetPlayer then print("Current bang target left."); stopAllMovement() end end)
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded); if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
 if not movementConnection then movementConnection = RunService.Heartbeat:Connect(updateMovement); print("Movement update loop connected.") end
 print("Stand Script Initialized for "..LocalPlayer.Name..". Listening for '"..TARGET_USERNAME.."'.")
